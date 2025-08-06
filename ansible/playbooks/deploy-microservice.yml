@@ -1,0 +1,140 @@
+---
+- name: Deploy microservice to EKS
+  hosts: localhost
+  gather_facts: false
+  vars:
+    aws_region: "{{ aws_region | default('us-west-2') }}"
+    cluster_name: "{{ eks_cluster_name | default('demo-eks-cluster') }}"
+    microservice_name: "demo-microservice"
+    microservice_image: "demo-microservice:latest"
+    ecr_repository: ""
+    
+  tasks:
+    - name: Install required Python packages
+      pip:
+        name:
+          - kubernetes
+          - boto3
+          - botocore
+        state: present
+      delegate_to: localhost
+
+    - name: Configure kubectl for EKS cluster
+      shell: |
+        aws eks update-kubeconfig --region {{ aws_region }} --name {{ cluster_name }}
+      delegate_to: localhost
+      when: cluster_name is defined
+
+    - name: Check if ECR repository exists
+      shell: |
+        aws ecr describe-repositories --repository-names {{ microservice_name }} --region {{ aws_region }} 2>/dev/null || echo "not_found"
+      register: ecr_check
+      delegate_to: localhost
+
+    - name: Create ECR repository if not exists
+      shell: |
+        aws ecr create-repository --repository-name {{ microservice_name }} --region {{ aws_region }}
+      when: "'not_found' in ecr_check.stdout"
+      delegate_to: localhost
+
+    - name: Get ECR repository URI
+      shell: |
+        aws ecr describe-repositories --repository-names {{ microservice_name }} --region {{ aws_region }} --query 'repositories[0].repositoryUri' --output text
+      register: ecr_uri
+      delegate_to: localhost
+
+    - name: Set ECR repository variable
+      set_fact:
+        ecr_repository: "{{ ecr_uri.stdout }}"
+
+    - name: Login to ECR
+      shell: |
+        aws ecr get-login-password --region {{ aws_region }} | docker login --username AWS --password-stdin {{ ecr_repository }}
+      delegate_to: localhost
+
+    - name: Build Maven project
+      shell: |
+        cd microservice && mvn clean package -DskipTests
+      args:
+        chdir: "{{ playbook_dir }}/.."
+      delegate_to: localhost
+
+    - name: Build Docker image
+      docker_image:
+        name: "{{ microservice_name }}"
+        tag: "latest"
+        source: build
+        build:
+          path: "{{ playbook_dir }}/../microservice"
+          dockerfile: Dockerfile
+        state: present
+      delegate_to: localhost
+
+    - name: Tag Docker image for ECR
+      docker_image:
+        name: "{{ microservice_name }}:latest"
+        repository: "{{ ecr_repository }}"
+        tag: "latest"
+        source: local
+        state: present
+      delegate_to: localhost
+
+    - name: Push image to ECR
+      docker_image:
+        name: "{{ ecr_repository }}"
+        tag: "latest"
+        push: yes
+        source: local
+      delegate_to: localhost
+
+    - name: Update Kubernetes deployment with ECR image
+      replace:
+        path: "{{ playbook_dir }}/../microservice/k8s/deployment.yaml"
+        regexp: 'image: demo-microservice:latest'
+        replace: "image: {{ ecr_repository }}:latest"
+      delegate_to: localhost
+
+    - name: Deploy microservice to Kubernetes
+      kubernetes.core.k8s:
+        state: present
+        definition: "{{ lookup('file', playbook_dir + '/../microservice/k8s/deployment.yaml') | from_yaml_all | list }}"
+      delegate_to: localhost
+
+    - name: Wait for deployment to be ready
+      kubernetes.core.k8s_info:
+        api_version: apps/v1
+        kind: Deployment
+        name: "{{ microservice_name }}"
+        wait: true
+        wait_condition:
+          type: Available
+          status: "True"
+        wait_timeout: 300
+      delegate_to: localhost
+
+    - name: Get service information
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Service
+        name: "{{ microservice_name }}-service"
+      register: service_info
+      delegate_to: localhost
+
+    - name: Display deployment information
+      debug:
+        msg: |
+          Microservice deployment completed successfully!
+          Service: {{ microservice_name }}-service
+          Type: {{ service_info.resources[0].spec.type if service_info.resources else 'Unknown' }}
+          {% if service_info.resources and service_info.resources[0].status.loadBalancer.ingress is defined %}
+          Load Balancer URL: http://{{ service_info.resources[0].status.loadBalancer.ingress[0].hostname }}
+          {% endif %}
+          
+          To check the status:
+          kubectl get deployments
+          kubectl get services
+          kubectl get pods
+          
+          To test the service:
+          kubectl port-forward service/{{ microservice_name }}-service 8080:80
+          curl http://localhost:8080/health

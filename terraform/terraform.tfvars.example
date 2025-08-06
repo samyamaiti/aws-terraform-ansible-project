@@ -1,0 +1,19 @@
+# Copy this file to terraform.tfvars and customize the values
+
+# AWS Configuration
+aws_region = "us-west-2"
+
+# EC2 Configuration
+instance_count = 10
+instance_type  = "t3.micro"
+key_name       = "my-terraform-key"  # Replace with your AWS key pair name
+
+# Project Configuration
+project_name = "terraform-ansible-project"
+
+# Security Configuration (restrict this in production)
+allowed_cidr_blocks = ["0.0.0.0/0"]
+
+# Ansible Configuration
+run_ansible = true
+wait_time_seconds = "120s"

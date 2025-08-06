@@ -1,0 +1,179 @@
+---
+- name: Install Java and Python on EC2 instances
+  hosts: all
+  become: yes
+  gather_facts: yes
+  
+  vars:
+    java_packages:
+      - java-11-openjdk
+      - java-11-openjdk-devel
+    python_packages:
+      - python3
+      - python3-pip
+      - python3-devel
+    pip_packages:
+      - boto3
+      - requests
+      - numpy
+      - pandas
+
+  tasks:
+    - name: Update all packages
+      yum:
+        name: "*"
+        state: latest
+      tags: system_update
+
+    - name: Install EPEL repository
+      yum:
+        name: epel-release
+        state: present
+      tags: repositories
+
+    - name: Install Java packages
+      yum:
+        name: "{{ java_packages }}"
+        state: present
+      tags: java
+
+    - name: Install Python packages
+      yum:
+        name: "{{ python_packages }}"
+        state: present
+      tags: python
+
+    - name: Upgrade pip to latest version
+      pip:
+        name: pip
+        state: latest
+        executable: pip3
+      tags: python
+
+    - name: Install Python packages via pip
+      pip:
+        name: "{{ pip_packages }}"
+        state: present
+        executable: pip3
+      tags: python
+
+    - name: Verify Java installation
+      command: java -version
+      register: java_version
+      changed_when: false
+      tags: verification
+
+    - name: Verify Python installation
+      command: python3 --version
+      register: python_version
+      changed_when: false
+      tags: verification
+
+    - name: Display Java version
+      debug:
+        msg: "{{ java_version.stderr }}"
+      tags: verification
+
+    - name: Display Python version
+      debug:
+        msg: "{{ python_version.stdout }}"
+      tags: verification
+
+    - name: Create application directory
+      file:
+        path: /opt/apps
+        state: directory
+        owner: ec2-user
+        group: ec2-user
+        mode: '0755'
+      tags: setup
+
+    - name: Create a simple test Java file
+      copy:
+        content: |
+          public class HelloWorld {
+              public static void main(String[] args) {
+                  System.out.println("Hello World from Java on " + System.getProperty("os.name"));
+                  System.out.println("Java version: " + System.getProperty("java.version"));
+              }
+          }
+        dest: /opt/apps/HelloWorld.java
+        owner: ec2-user
+        group: ec2-user
+        mode: '0644'
+      tags: setup
+
+    - name: Create a simple test Python file
+      copy:
+        content: |
+          #!/usr/bin/env python3
+          import sys
+          import platform
+          import boto3
+
+          print(f"Hello World from Python on {platform.system()}")
+          print(f"Python version: {sys.version}")
+          print(f"Boto3 version: {boto3.__version__}")
+        dest: /opt/apps/hello.py
+        owner: ec2-user
+        group: ec2-user
+        mode: '0755'
+      tags: setup
+
+    - name: Compile Java test file
+      command: javac /opt/apps/HelloWorld.java
+      become_user: ec2-user
+      tags: verification
+
+    - name: Run Java test
+      command: java -cp /opt/apps HelloWorld
+      become_user: ec2-user
+      register: java_test_output
+      tags: verification
+
+    - name: Run Python test
+      command: python3 /opt/apps/hello.py
+      become_user: ec2-user
+      register: python_test_output
+      tags: verification
+
+    - name: Display Java test output
+      debug:
+        msg: "{{ java_test_output.stdout_lines }}"
+      tags: verification
+
+    - name: Display Python test output
+      debug:
+        msg: "{{ python_test_output.stdout_lines }}"
+      tags: verification
+
+    - name: Install additional development tools
+      yum:
+        name:
+          - git
+          - wget
+          - curl
+          - vim
+          - htop
+        state: present
+      tags: tools
+
+    - name: Create summary report
+      copy:
+        content: |
+          EC2 Instance Configuration Summary
+          =================================
+          Hostname: {{ ansible_hostname }}
+          IP Address: {{ ansible_default_ipv4.address }}
+          OS: {{ ansible_os_family }} {{ ansible_distribution_version }}
+          
+          Installed Software:
+          - Java: {{ java_version.stderr.split('\n')[0] if java_version.stderr else 'Not found' }}
+          - Python: {{ python_version.stdout if python_version.stdout else 'Not found' }}
+          
+          Installation completed at: {{ ansible_date_time.iso8601 }}
+        dest: /opt/apps/installation_summary.txt
+        owner: ec2-user
+        group: ec2-user
+        mode: '0644'
+      tags: summary
