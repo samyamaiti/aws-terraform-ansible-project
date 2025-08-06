@@ -1,0 +1,250 @@
+name: Cleanup Test Resources
+
+on:
+  schedule:
+    # Run every Sunday at 2 AM UTC to clean up test resources
+    - cron: '0 2 * * 0'
+  workflow_dispatch:
+    inputs:
+      environment_filter:
+        description: 'Environment to cleanup (leave empty for all test envs)'
+        required: false
+        type: string
+      dry_run:
+        description: 'Dry run - only list resources without deleting'
+        required: true
+        default: 'true'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+
+env:
+  AWS_REGION: us-west-2
+
+jobs:
+  cleanup-resources:
+    name: Cleanup Test Resources
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.5.7
+
+      - name: Find Test Resources
+        id: find-resources
+        run: |
+          echo "## Cleanup Report" >> cleanup-report.md
+          echo "**Date**: $(date)" >> cleanup-report.md
+          echo "**Mode**: ${{ github.event.inputs.dry_run == 'true' && 'DRY RUN' || 'EXECUTE' }}" >> cleanup-report.md
+          echo "" >> cleanup-report.md
+          
+          # Find EC2 instances with test/dev tags older than 7 days
+          echo "### EC2 Instances to Clean Up" >> cleanup-report.md
+          
+          CUTOFF_DATE=$(date -d '7 days ago' --iso-8601)
+          
+          OLD_INSTANCES=$(aws ec2 describe-instances \
+            --filters "Name=tag:Project,Values=aws-terraform-ansible*" \
+                      "Name=tag:Environment,Values=dev,test,staging" \
+                      "Name=instance-state-name,Values=running,stopped" \
+            --query "Reservations[?Instances[?LaunchTime<'${CUTOFF_DATE}']].Instances[].[InstanceId,Tags[?Key=='Environment'].Value|[0],LaunchTime,State.Name]" \
+            --output table)
+          
+          echo '```' >> cleanup-report.md
+          echo "$OLD_INSTANCES" >> cleanup-report.md
+          echo '```' >> cleanup-report.md
+          
+          # Find old EKS clusters
+          echo "" >> cleanup-report.md
+          echo "### EKS Clusters to Clean Up" >> cleanup-report.md
+          
+          OLD_CLUSTERS=$(aws eks list-clusters \
+            --query 'clusters[?contains(@, `terraform-ansible`) && contains(@, `dev`) || contains(@, `test`)]' \
+            --output table)
+          
+          echo '```' >> cleanup-report.md
+          echo "$OLD_CLUSTERS" >> cleanup-report.md
+          echo '```' >> cleanup-report.md
+          
+          # Store instance IDs for cleanup
+          aws ec2 describe-instances \
+            --filters "Name=tag:Project,Values=aws-terraform-ansible*" \
+                      "Name=tag:Environment,Values=dev,test,staging" \
+                      "Name=instance-state-name,Values=running,stopped" \
+            --query "Reservations[?Instances[?LaunchTime<'${CUTOFF_DATE}']].Instances[].InstanceId" \
+            --output text > old_instances.txt
+
+      - name: Cleanup EC2 Instances
+        if: github.event.inputs.dry_run != 'true'
+        run: |
+          if [ -s old_instances.txt ]; then
+            echo "Terminating old EC2 instances..."
+            while read instance_id; do
+              if [ ! -z "$instance_id" ]; then
+                echo "Terminating $instance_id"
+                aws ec2 terminate-instances --instance-ids $instance_id
+              fi
+            done < old_instances.txt
+          else
+            echo "No old instances found"
+          fi
+
+      - name: Cleanup EKS Clusters
+        if: github.event.inputs.dry_run != 'true'
+        run: |
+          # Find and delete old EKS clusters
+          CLUSTERS=$(aws eks list-clusters \
+            --query 'clusters[?contains(@, `terraform-ansible`) && (contains(@, `dev`) || contains(@, `test`))]' \
+            --output text)
+          
+          for cluster in $CLUSTERS; do
+            if [ ! -z "$cluster" ]; then
+              CREATION_DATE=$(aws eks describe-cluster --name $cluster \
+                --query 'cluster.createdAt' --output text)
+              
+              # Check if cluster is older than 7 days
+              if [[ $(date -d "$CREATION_DATE" +%s) -lt $(date -d '7 days ago' +%s) ]]; then
+                echo "Deleting old EKS cluster: $cluster"
+                
+                # Delete node groups first
+                NODE_GROUPS=$(aws eks list-nodegroups --cluster-name $cluster --query 'nodegroups' --output text)
+                for ng in $NODE_GROUPS; do
+                  if [ ! -z "$ng" ]; then
+                    echo "Deleting node group: $ng"
+                    aws eks delete-nodegroup --cluster-name $cluster --nodegroup-name $ng
+                  fi
+                done
+                
+                # Wait for node groups to be deleted
+                sleep 300
+                
+                # Delete the cluster
+                aws eks delete-cluster --name $cluster
+              fi
+            fi
+          done
+
+      - name: Cleanup ECR Images
+        if: github.event.inputs.dry_run != 'true'
+        run: |
+          echo "" >> cleanup-report.md
+          echo "### ECR Cleanup" >> cleanup-report.md
+          
+          # Clean up old Docker images in ECR
+          REPOS=$(aws ecr describe-repositories \
+            --query 'repositories[?contains(repositoryName, `demo-microservice`)].repositoryName' \
+            --output text)
+          
+          for repo in $REPOS; do
+            if [ ! -z "$repo" ]; then
+              echo "Cleaning old images from $repo"
+              
+              # Keep only the 5 most recent images
+              OLD_IMAGES=$(aws ecr list-images --repository-name $repo \
+                --query 'imageIds[5:].[imageDigest]' --output text)
+              
+              if [ ! -z "$OLD_IMAGES" ]; then
+                aws ecr batch-delete-image --repository-name $repo \
+                  --image-ids "$(echo "$OLD_IMAGES" | sed 's/^/imageDigest=/' | tr '\n' ' ')"
+              fi
+            fi
+          done
+
+      - name: Find Orphaned Resources
+        run: |
+          echo "" >> cleanup-report.md
+          echo "### Orphaned Resources" >> cleanup-report.md
+          
+          # Find security groups not associated with instances
+          echo "#### Unused Security Groups" >> cleanup-report.md
+          aws ec2 describe-security-groups \
+            --filters "Name=group-name,Values=*terraform-ansible*" \
+            --query 'SecurityGroups[?length(Tags[?Key==`Project` && contains(Value, `terraform-ansible`)]) > `0`].[GroupId,GroupName]' \
+            --output table >> cleanup-report.md
+          
+          # Find EBS volumes not attached to instances
+          echo "" >> cleanup-report.md
+          echo "#### Unattached EBS Volumes" >> cleanup-report.md
+          aws ec2 describe-volumes \
+            --filters "Name=status,Values=available" "Name=tag:Project,Values=*terraform-ansible*" \
+            --query 'Volumes[*].[VolumeId,Size,CreateTime]' \
+            --output table >> cleanup-report.md
+
+      - name: Generate Cleanup Summary
+        run: |
+          echo "" >> cleanup-report.md
+          echo "### Summary" >> cleanup-report.md
+          echo "" >> cleanup-report.md
+          
+          if [ "${{ github.event.inputs.dry_run }}" == "true" ]; then
+            echo "This was a **DRY RUN** - no resources were actually deleted." >> cleanup-report.md
+            echo "" >> cleanup-report.md
+            echo "To perform actual cleanup, run this workflow again with 'Dry run' set to 'false'." >> cleanup-report.md
+          else
+            echo "**Cleanup completed successfully.**" >> cleanup-report.md
+            echo "" >> cleanup-report.md
+            echo "Resources older than 7 days have been terminated/deleted." >> cleanup-report.md
+          fi
+          
+          echo "" >> cleanup-report.md
+          echo "---" >> cleanup-report.md
+          echo "*Generated by GitHub Actions on $(date)*" >> cleanup-report.md
+
+      - name: Upload Cleanup Report
+        uses: actions/upload-artifact@v3
+        with:
+          name: cleanup-report-${{ github.run_number }}
+          path: cleanup-report.md
+
+      - name: Create Summary Issue
+        if: github.event.inputs.dry_run != 'true'
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const fs = require('fs');
+            const report = fs.readFileSync('cleanup-report.md', 'utf8');
+            
+            const title = `Weekly Resource Cleanup - ${new Date().toISOString().split('T')[0]}`;
+            const body = `
+            ## Automated Resource Cleanup Report
+            
+            ${report}
+            
+            ### Next Steps
+            - Review the cleanup report for any issues
+            - Verify that no production resources were affected
+            - Update cleanup policies if needed
+            
+            ---
+            *This report was automatically generated by GitHub Actions*
+            `;
+            
+            github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: title,
+              body: body,
+              labels: ['maintenance', 'cleanup', 'automated']
+            });
+
+      - name: Notify on Slack
+        if: failure()
+        uses: 8398a7/action-slack@v3
+        with:
+          status: failure
+          fields: repo,message,commit,author,action,eventName,ref,workflow
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}

@@ -1,0 +1,280 @@
+name: Infrastructure Monitoring
+
+on:
+  schedule:
+    # Run every day at 6 AM UTC
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+    inputs:
+      check_type:
+        description: 'Type of monitoring check'
+        required: true
+        default: 'health'
+        type: choice
+        options:
+          - 'health'
+          - 'security'
+          - 'costs'
+          - 'all'
+
+env:
+  AWS_REGION: us-west-2
+
+jobs:
+  health-check:
+    name: Infrastructure Health Check
+    runs-on: ubuntu-latest
+    if: github.event.inputs.check_type == 'health' || github.event.inputs.check_type == 'all' || github.event_name == 'schedule'
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Check EC2 Instances
+        run: |
+          echo "## EC2 Health Check" >> health-report.md
+          echo "" >> health-report.md
+          
+          # Check for running instances with our project tag
+          INSTANCES=$(aws ec2 describe-instances \
+            --filters "Name=tag:Project,Values=aws-terraform-ansible*" "Name=instance-state-name,Values=running" \
+            --query 'Reservations[*].Instances[*].[InstanceId,State.Name,PublicIpAddress]' \
+            --output table)
+          
+          echo "### Running Instances" >> health-report.md
+          echo '```' >> health-report.md
+          echo "$INSTANCES" >> health-report.md
+          echo '```' >> health-report.md
+
+      - name: Check EKS Clusters
+        run: |
+          echo "" >> health-report.md
+          echo "## EKS Health Check" >> health-report.md
+          echo "" >> health-report.md
+          
+          # Check for EKS clusters
+          CLUSTERS=$(aws eks list-clusters --query 'clusters' --output text)
+          
+          if [ ! -z "$CLUSTERS" ]; then
+            for cluster in $CLUSTERS; do
+              if [[ $cluster == *"terraform-ansible"* ]]; then
+                STATUS=$(aws eks describe-cluster --name $cluster --query 'cluster.status' --output text)
+                echo "- **$cluster**: $STATUS" >> health-report.md
+                
+                if [ "$STATUS" == "ACTIVE" ]; then
+                  aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name $cluster
+                  kubectl get nodes >> nodes.txt 2>&1 || echo "Unable to get nodes" >> nodes.txt
+                  echo "" >> health-report.md
+                  echo "### Nodes for $cluster" >> health-report.md
+                  echo '```' >> health-report.md
+                  cat nodes.txt >> health-report.md
+                  echo '```' >> health-report.md
+                fi
+              fi
+            done
+          else
+            echo "No EKS clusters found" >> health-report.md
+          fi
+
+      - name: Check Application Health
+        run: |
+          echo "" >> health-report.md
+          echo "## Application Health Check" >> health-report.md
+          echo "" >> health-report.md
+          
+          # Try to check microservice health if EKS is running
+          CLUSTERS=$(aws eks list-clusters --query 'clusters' --output text)
+          
+          if [ ! -z "$CLUSTERS" ]; then
+            for cluster in $CLUSTERS; do
+              if [[ $cluster == *"terraform-ansible"* ]]; then
+                aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name $cluster
+                
+                # Check if demo-microservice deployment exists
+                if kubectl get deployment demo-microservice >/dev/null 2>&1; then
+                  READY_REPLICAS=$(kubectl get deployment demo-microservice -o jsonpath='{.status.readyReplicas}')
+                  TOTAL_REPLICAS=$(kubectl get deployment demo-microservice -o jsonpath='{.spec.replicas}')
+                  echo "- **demo-microservice**: $READY_REPLICAS/$TOTAL_REPLICAS ready" >> health-report.md
+                  
+                  # Try to access health endpoint
+                  kubectl port-forward service/demo-microservice-service 8080:80 &
+                  PF_PID=$!
+                  sleep 5
+                  
+                  if curl -f http://localhost:8080/actuator/health >/dev/null 2>&1; then
+                    echo "  - Health endpoint: ✅ OK" >> health-report.md
+                  else
+                    echo "  - Health endpoint: ❌ Failed" >> health-report.md
+                  fi
+                  
+                  kill $PF_PID 2>/dev/null || true
+                else
+                  echo "- **demo-microservice**: Not deployed" >> health-report.md
+                fi
+              fi
+            done
+          fi
+
+      - name: Upload Health Report
+        uses: actions/upload-artifact@v3
+        with:
+          name: health-report-${{ github.run_number }}
+          path: health-report.md
+
+      - name: Create Issue for Failed Health Check
+        if: failure()
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const title = `Infrastructure Health Check Failed - ${new Date().toISOString().split('T')[0]}`;
+            const body = `
+            ## Health Check Failure Report
+            
+            **Date**: ${new Date().toISOString()}
+            **Workflow**: ${context.workflow}
+            **Run ID**: ${context.runId}
+            
+            The automated health check has detected issues with the infrastructure.
+            
+            Please check the workflow logs and health report for details.
+            
+            ### Next Steps
+            1. Review the workflow logs
+            2. Check AWS Console for resource status
+            3. Verify EKS cluster health
+            4. Test application endpoints manually
+            
+            ---
+            *This issue was automatically created by GitHub Actions*
+            `;
+            
+            github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: title,
+              body: body,
+              labels: ['infrastructure', 'monitoring', 'urgent']
+            });
+
+  security-scan:
+    name: Security Compliance Check
+    runs-on: ubuntu-latest
+    if: github.event.inputs.check_type == 'security' || github.event.inputs.check_type == 'all'
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Run Security Group Audit
+        run: |
+          echo "## Security Group Audit" >> security-report.md
+          echo "" >> security-report.md
+          
+          # Check for security groups with overly permissive rules
+          aws ec2 describe-security-groups \
+            --filters "Name=group-name,Values=*terraform-ansible*" \
+            --query 'SecurityGroups[*].[GroupName,GroupId,IpPermissions[?IpRanges[?CidrIp==`0.0.0.0/0`]]]' \
+            --output table >> security-report.md
+
+      - name: Check IAM Policies
+        run: |
+          echo "" >> security-report.md
+          echo "## IAM Policy Review" >> security-report.md
+          echo "" >> security-report.md
+          
+          # List IAM roles created by our project
+          aws iam list-roles \
+            --query 'Roles[?contains(RoleName, `terraform-ansible`)].RoleName' \
+            --output text >> roles.txt
+          
+          if [ -s roles.txt ]; then
+            echo "### Project IAM Roles" >> security-report.md
+            echo '```' >> security-report.md
+            cat roles.txt >> security-report.md
+            echo '```' >> security-report.md
+          fi
+
+      - name: Upload Security Report
+        uses: actions/upload-artifact@v3
+        with:
+          name: security-report-${{ github.run_number }}
+          path: security-report.md
+
+  cost-monitoring:
+    name: Cost Analysis
+    runs-on: ubuntu-latest
+    if: github.event.inputs.check_type == 'costs' || github.event.inputs.check_type == 'all'
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Get Cost and Usage
+        run: |
+          echo "## Cost Analysis Report" >> cost-report.md
+          echo "" >> cost-report.md
+          echo "**Generated**: $(date)" >> cost-report.md
+          echo "" >> cost-report.md
+          
+          # Get current month costs (requires Cost Explorer API)
+          START_DATE=$(date -d "$(date +%Y-%m-01)" +%Y-%m-%d)
+          END_DATE=$(date +%Y-%m-%d)
+          
+          echo "### Current Month Usage ($START_DATE to $END_DATE)" >> cost-report.md
+          echo "" >> cost-report.md
+          
+          # This requires appropriate permissions for Cost Explorer
+          aws ce get-cost-and-usage \
+            --time-period Start=$START_DATE,End=$END_DATE \
+            --granularity MONTHLY \
+            --metrics BlendedCost \
+            --group-by Type=DIMENSION,Key=SERVICE \
+            --query 'ResultsByTime[0].Groups[?Metrics.BlendedCost.Amount>`0`].[Keys[0],Metrics.BlendedCost.Amount]' \
+            --output table >> cost-report.md 2>/dev/null || echo "Cost data not available (requires Cost Explorer permissions)" >> cost-report.md
+
+      - name: Check Resource Counts
+        run: |
+          echo "" >> cost-report.md
+          echo "### Resource Inventory" >> cost-report.md
+          echo "" >> cost-report.md
+          
+          # Count EC2 instances
+          EC2_COUNT=$(aws ec2 describe-instances \
+            --filters "Name=tag:Project,Values=aws-terraform-ansible*" "Name=instance-state-name,Values=running" \
+            --query 'length(Reservations[*].Instances[*])' --output text)
+          echo "- **EC2 Instances**: $EC2_COUNT running" >> cost-report.md
+          
+          # Count EKS clusters
+          EKS_COUNT=$(aws eks list-clusters --query 'length(clusters)' --output text)
+          echo "- **EKS Clusters**: $EKS_COUNT" >> cost-report.md
+          
+          # Count ECR repositories
+          ECR_COUNT=$(aws ecr describe-repositories --query 'length(repositories)' --output text 2>/dev/null || echo "0")
+          echo "- **ECR Repositories**: $ECR_COUNT" >> cost-report.md
+
+      - name: Upload Cost Report
+        uses: actions/upload-artifact@v3
+        with:
+          name: cost-report-${{ github.run_number }}
+          path: cost-report.md
