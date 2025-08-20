@@ -320,7 +320,12 @@ jobs:
       - name: Terraform Init
         run: |
           cd terraform
-          terraform init
+          terraform init \
+            -backend-config="bucket=terraform-ansible-project-state" \
+            -backend-config="key=terraform.tfstate" \
+            -backend-config="region=${{ env.AWS_REGION }}" \
+            -backend-config="encrypt=true" \
+            -backend-config="dynamodb_table=terraform-state-lock"
 
       - name: Terraform Apply
         run: |
@@ -434,7 +439,12 @@ jobs:
       - name: Terraform Init
         run: |
           cd terraform
-          terraform init
+          terraform init \
+            -backend-config="bucket=terraform-ansible-project-state" \
+            -backend-config="key=terraform.tfstate" \
+            -backend-config="region=${{ env.AWS_REGION }}" \
+            -backend-config="encrypt=true" \
+            -backend-config="dynamodb_table=terraform-state-lock"
 
       - name: Terraform Destroy
         run: |
