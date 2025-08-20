@@ -49,23 +49,4 @@ output "deployment_summary" {
   }
 }
 
-# EKS Outputs
-output "eks_cluster_name" {
-  description = "EKS cluster name"
-  value       = var.deploy_eks ? aws_eks_cluster.main[0].name : "Not deployed"
-}
 
-output "eks_cluster_endpoint" {
-  description = "EKS cluster endpoint"
-  value       = var.deploy_eks ? aws_eks_cluster.main[0].endpoint : "Not deployed"
-}
-
-output "eks_cluster_version" {
-  description = "EKS cluster version"
-  value       = var.deploy_eks ? aws_eks_cluster.main[0].version : "Not deployed"
-}
-
-output "kubeconfig_update_command" {
-  description = "Command to update kubeconfig"
-  value       = var.deploy_eks ? "aws eks update-kubeconfig --region ${var.aws_region} --name ${aws_eks_cluster.main[0].name}" : "Not applicable"
-}
