@@ -219,12 +219,21 @@ resource "null_resource" "deploy_microservice" {
 
   # Run Ansible playbook to deploy microservice to EKS
   provisioner "local-exec" {
-    command = "cd ../ansible && ansible-playbook playbooks/deploy-microservice.yml -e eks_cluster_name=${var.deploy_eks ? aws_eks_cluster.main[0].name : ""} -e aws_region=${var.aws_region}"
+    command = "cd ../ansible && ansible-playbook playbooks/deploy-microservice.yml -e eks_cluster_name=${aws_eks_cluster.main[0].name} -e aws_region=${var.aws_region}"
     
     environment = {
       ANSIBLE_HOST_KEY_CHECKING = "False"
+      AWS_REGION               = var.aws_region
     }
   }
 
-  depends_on = [aws_eks_cluster.main]
+  triggers = {
+    cluster_endpoint = aws_eks_cluster.main[0].endpoint
+    cluster_name     = aws_eks_cluster.main[0].name
+  }
+
+  depends_on = [
+    aws_eks_cluster.main,
+    aws_eks_node_group.main
+  ]
 }

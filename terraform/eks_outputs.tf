@@ -15,5 +15,5 @@ output "eks_cluster_version" {
 
 output "kubeconfig_update_command" {
   description = "Command to update kubeconfig for the EKS cluster"
-  value       = "aws eks update-kubeconfig --region ${var.aws_region} --name ${try(aws_eks_cluster.main[0].name, "cluster-not-deployed")}"
+  value       = var.deploy_eks ? "aws eks update-kubeconfig --region ${var.aws_region} --name ${aws_eks_cluster.main[0].name}" : "EKS cluster not deployed"
 }
