@@ -19,6 +19,25 @@
         state: present
       delegate_to: localhost
 
+    - name: Check if Maven is installed
+      shell: which mvn
+      register: maven_check
+      ignore_errors: true
+      delegate_to: localhost
+
+    - name: Install Maven if not present (on macOS)
+      shell: brew install maven
+      when: maven_check.rc != 0 and ansible_os_family == "Darwin"
+      delegate_to: localhost
+
+    - name: Install Maven if not present (on Ubuntu/Debian)
+      apt:
+        name: maven
+        state: present
+      when: maven_check.rc != 0 and ansible_os_family == "Debian"
+      become: true
+      delegate_to: localhost
+
     - name: Configure kubectl for EKS cluster
       shell: |
         aws eks update-kubeconfig --region {{ aws_region }} --name {{ cluster_name }}
@@ -53,10 +72,7 @@
       delegate_to: localhost
 
     - name: Build Maven project
-      shell: |
-        cd microservice && mvn clean package -DskipTests
-      args:
-        chdir: "{{ playbook_dir }}/.."
+      shell: cd {{ project_root }}/microservice && mvn clean package -DskipTests
       delegate_to: localhost
 
     - name: Build Docker image
@@ -65,7 +81,7 @@
         tag: "latest"
         source: build
         build:
-          path: "{{ playbook_dir }}/../microservice"
+          path: "{{ project_root }}/microservice"
           dockerfile: Dockerfile
         state: present
       delegate_to: localhost
