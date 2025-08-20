@@ -181,7 +181,7 @@ jobs:
     name: Plan Infrastructure Changes
     runs-on: ubuntu-latest
     needs: [validate, test-microservice]
-    if: always() && (needs.validate.result == 'success')
+    if: always() && (needs.validate.result == 'success' || github.event_name == 'workflow_dispatch')
     environment: ${{ github.event.inputs.environment || 'dev' }}
     
     steps:
@@ -275,7 +275,7 @@ jobs:
     name: Deploy Infrastructure
     runs-on: ubuntu-latest
     needs: plan-infrastructure
-    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+    if: success() && (github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch')
     environment: ${{ github.event.inputs.environment || 'dev' }}
     
     steps:
