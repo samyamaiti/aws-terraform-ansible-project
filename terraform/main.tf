@@ -169,9 +169,9 @@ resource "aws_instance" "ec2_instances" {
               EOF
 
   tags = {
-    Name        = "${var.project_name}-instance-${count.index + 1}"
-    Project     = var.project_name
-    Environment = "development"
+    Name           = "${var.project_name}-instance-${count.index + 1}"
+    Project        = var.project_name
+    Environment    = "development"
     AnsibleManaged = "true"
   }
 
@@ -192,8 +192,8 @@ resource "local_file" "ansible_inventory" {
 
 # Wait for instances to be ready before running Ansible
 resource "time_sleep" "wait_for_instances" {
-  count = var.run_ansible ? 1 : 0
-  depends_on = [aws_instance.ec2_instances]
+  count           = var.run_ansible ? 1 : 0
+  depends_on      = [aws_instance.ec2_instances]
   create_duration = var.wait_time_seconds
 }
 
@@ -204,7 +204,7 @@ resource "null_resource" "configure_instances" {
   # Run Ansible playbook to install software on EC2 instances
   provisioner "local-exec" {
     command = "cd ../ansible && ansible-playbook -i inventory/hosts.tpl playbooks/install-software.yml"
-    
+
     environment = {
       ANSIBLE_HOST_KEY_CHECKING = "False"
     }
@@ -220,10 +220,10 @@ resource "null_resource" "deploy_microservice" {
   # Run Ansible playbook to deploy microservice to EKS
   provisioner "local-exec" {
     command = "cd ../ansible && ansible-playbook playbooks/deploy-microservice.yml -e eks_cluster_name=${aws_eks_cluster.main[0].name} -e aws_region=${var.aws_region}"
-    
+
     environment = {
       ANSIBLE_HOST_KEY_CHECKING = "False"
-      AWS_REGION               = var.aws_region
+      AWS_REGION                = var.aws_region
     }
   }
 

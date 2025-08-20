@@ -21,7 +21,7 @@ output "security_group_id" {
 output "ssh_connection_commands" {
   description = "SSH commands to connect to instances"
   value = [
-    for i, instance in aws_instance.ec2_instances : 
+    for i, instance in aws_instance.ec2_instances :
     "ssh -i ~/.ssh/${var.key_name}.pem ec2-user@${instance.public_ip}"
   ]
 }
