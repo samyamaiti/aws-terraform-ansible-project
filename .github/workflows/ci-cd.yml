@@ -7,6 +7,14 @@ on:
     branches: [ main ]
   workflow_dispatch:
     inputs:
+      action:
+        description: 'Action to perform'
+        required: true
+        default: 'deploy'
+        type: choice
+        options:
+          - 'deploy'
+          - 'destroy'
       deploy_eks:
         description: 'Deploy EKS cluster and microservice'
         required: true
@@ -24,14 +32,6 @@ on:
           - 'dev'
           - 'staging'
           - 'prod'
-      destroy:
-        description: 'Destroy infrastructure after deployment (for testing)'
-        required: true
-        default: 'false'
-        type: choice
-        options:
-          - 'true'
-          - 'false'
 
 env:
   AWS_REGION: us-west-2
@@ -275,7 +275,7 @@ jobs:
     name: Deploy Infrastructure
     runs-on: ubuntu-latest
     needs: plan-infrastructure
-    if: success() && (github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch')
+    if: success() && (github.ref == 'refs/heads/main' || (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'deploy'))
     environment: ${{ github.event.inputs.environment || 'dev' }}
     
     steps:
@@ -391,11 +391,10 @@ jobs:
             terraform/*.log
             ansible/*.log
 
-  cleanup:
-    name: Cleanup Resources
+  destroy-infrastructure:
+    name: Destroy Infrastructure
     runs-on: ubuntu-latest
-    needs: deploy-infrastructure
-    if: always() && github.event.inputs.destroy == 'true'
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'destroy'
     environment: ${{ github.event.inputs.environment || 'dev' }}
     
     steps:
@@ -454,21 +453,21 @@ jobs:
   notify:
     name: Notify Results
     runs-on: ubuntu-latest
-    needs: [validate, test-microservice, plan-infrastructure, deploy-infrastructure, cleanup]
+    needs: [validate, test-microservice, plan-infrastructure, deploy-infrastructure, destroy-infrastructure]
     if: always()
     
     steps:
       - name: Deployment Status
         run: |
-          echo "## Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "## Infrastructure Operation Summary" >> $GITHUB_STEP_SUMMARY
           echo "| Stage | Status |" >> $GITHUB_STEP_SUMMARY
           echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
           echo "| Validation | ${{ needs.validate.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Testing | ${{ needs.test-microservice.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Planning | ${{ needs.plan-infrastructure.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Deployment | ${{ needs.deploy-infrastructure.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Cleanup | ${{ needs.cleanup.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Destroy | ${{ needs.destroy-infrastructure.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Environment:** ${{ github.event.inputs.environment || 'dev' }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Action:** ${{ github.event.inputs.action }}" >> $GITHUB_STEP_SUMMARY
           echo "**EKS Deployed:** ${{ github.event.inputs.deploy_eks || 'false' }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Destroyed:** ${{ github.event.inputs.destroy || 'false' }}" >> $GITHUB_STEP_SUMMARY
