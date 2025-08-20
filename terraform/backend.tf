@@ -1,5 +1,6 @@
 terraform {
   backend "s3" {
-    # These will be provided via backend-config in terraform init
+    region = "us-west-2"
+    # Other settings will be provided via backend-config in terraform init
   }
 }
