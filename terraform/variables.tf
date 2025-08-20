@@ -86,7 +86,7 @@ variable "eks_node_count" {
 variable "eks_node_instance_type" {
   description = "Instance type for EKS worker nodes"
   type        = string
-  default     = "t3.small"  # Smallest recommended size for EKS worker nodes
+  default     = "t3.small" # Smallest recommended size for EKS worker nodes
 }
 
 variable "deploy_eks" {
