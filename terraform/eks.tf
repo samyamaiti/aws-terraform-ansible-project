@@ -89,6 +89,9 @@ resource "aws_eks_cluster" "main" {
 
   depends_on = [
     aws_iam_role_policy_attachment.eks_cluster_policy[0],
+    aws_vpc.main,
+    aws_subnet.public,
+    aws_subnet.private
   ]
 
   tags = {
@@ -122,6 +125,7 @@ resource "aws_eks_node_group" "main" {
     aws_iam_role_policy_attachment.eks_worker_node_policy[0],
     aws_iam_role_policy_attachment.eks_cni_policy[0],
     aws_iam_role_policy_attachment.eks_container_registry_policy[0],
+    aws_eks_cluster.main[0]
   ]
 
   tags = {
@@ -142,6 +146,13 @@ resource "aws_security_group" "eks_additional" {
     to_port     = 32767
     protocol    = "tcp"
     cidr_blocks = ["${chomp(data.http.myip.response_body)}/32"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
   }
 
   tags = {

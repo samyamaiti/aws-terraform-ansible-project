@@ -43,8 +43,8 @@ output "deployment_summary" {
     ansible_enabled   = var.run_ansible
     wait_time         = var.wait_time_seconds
     eks_enabled       = var.deploy_eks
-    eks_cluster_name  = var.deploy_eks ? aws_eks_cluster.main[0].name : "Not deployed"
-    eks_endpoint      = var.deploy_eks ? aws_eks_cluster.main[0].endpoint : "Not deployed"
+    eks_cluster_name  = try(var.deploy_eks ? aws_eks_cluster.main[0].name : "Not deployed", "Not deployed")
+    eks_endpoint      = try(var.deploy_eks ? aws_eks_cluster.main[0].endpoint : "Not deployed", "Not deployed")
     timestamp         = timestamp()
   }
 }
