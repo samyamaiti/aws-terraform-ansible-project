@@ -12,7 +12,7 @@ permissions:
   pull-requests: write
 
 env:
-  AWS_REGION: ${{ secrets.AWS_REGION }}
+  AWS_REGION: "us-west-2"
   TF_WORKSPACE: "development"
 
 jobs:
@@ -32,7 +32,7 @@ jobs:
       with:
         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        aws-region: ${{ secrets.AWS_REGION }}
+        aws-region: us-west-2
         mask-aws-account-id: true
 
     - name: Check and Create S3 Backend
@@ -88,13 +88,13 @@ jobs:
     - name: Terraform Init
       id: init
       run: |
-        echo "AWS Region: ${{ secrets.AWS_REGION }}"
+        echo "AWS Region: us-west-2"
         echo "Initializing Terraform..."
         terraform init -input=false \
           -backend=true \
           -backend-config="bucket=terraform-ansible-project-state" \
           -backend-config="key=terraform.tfstate" \
-          -backend-config="region=${{ secrets.AWS_REGION }}" \
+          -backend-config="region=us-west-2" \
           -backend-config="encrypt=true" \
           -backend-config="dynamodb_table=terraform-state-lock" \
           -no-color
