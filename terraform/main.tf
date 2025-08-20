@@ -19,6 +19,12 @@ data "aws_ami" "amazon_linux" {
   }
 }
 
+# Create Key Pair
+resource "aws_key_pair" "terraform_key" {
+  key_name   = var.key_name
+  public_key = file("${path.module}/terraform-key.pub")
+}
+
 # Create VPC
 resource "aws_vpc" "main" {
   cidr_block           = var.vpc_cidr

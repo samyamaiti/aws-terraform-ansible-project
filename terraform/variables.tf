@@ -1,7 +1,7 @@
 variable "aws_region" {
   description = "AWS region"
   type        = string
-  default     = "us-east-2"
+  default     = "us-west-2"
 }
 
 variable "vpc_cidr" {
@@ -74,7 +74,7 @@ variable "wait_time_seconds" {
 variable "eks_version" {
   description = "EKS cluster version"
   type        = string
-  default     = "1.27"
+  default     = "1.28"
 }
 
 variable "eks_node_count" {
