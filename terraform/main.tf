@@ -19,23 +19,99 @@ data "aws_ami" "amazon_linux" {
   }
 }
 
-# Get default VPC
-data "aws_vpc" "default" {
-  default = true
+# Create VPC
+resource "aws_vpc" "main" {
+  cidr_block           = var.vpc_cidr
+  enable_dns_hostnames = true
+  enable_dns_support   = true
+
+  tags = {
+    Name    = "${var.project_name}-vpc"
+    Project = var.project_name
+  }
 }
 
-# Get default subnet
-data "aws_subnets" "default" {
-  filter {
-    name   = "vpc-id"
-    values = [data.aws_vpc.default.id]
+# Create Internet Gateway
+resource "aws_internet_gateway" "main" {
+  vpc_id = aws_vpc.main.id
+
+  tags = {
+    Name    = "${var.project_name}-igw"
+    Project = var.project_name
   }
+}
+
+# Create Public Subnets
+resource "aws_subnet" "public" {
+  count             = length(var.public_subnet_cidrs)
+  vpc_id            = aws_vpc.main.id
+  cidr_block        = var.public_subnet_cidrs[count.index]
+  availability_zone = var.availability_zones[count.index]
+
+  map_public_ip_on_launch = true
+
+  tags = {
+    Name    = "${var.project_name}-public-subnet-${count.index + 1}"
+    Project = var.project_name
+  }
+}
+
+# Create Private Subnets
+resource "aws_subnet" "private" {
+  count             = length(var.private_subnet_cidrs)
+  vpc_id            = aws_vpc.main.id
+  cidr_block        = var.private_subnet_cidrs[count.index]
+  availability_zone = var.availability_zones[count.index]
+
+  tags = {
+    Name    = "${var.project_name}-private-subnet-${count.index + 1}"
+    Project = var.project_name
+  }
+}
+
+# Create Public Route Table
+resource "aws_route_table" "public" {
+  vpc_id = aws_vpc.main.id
+
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.main.id
+  }
+
+  tags = {
+    Name    = "${var.project_name}-public-rt"
+    Project = var.project_name
+  }
+}
+
+# Create Private Route Table
+resource "aws_route_table" "private" {
+  vpc_id = aws_vpc.main.id
+
+  tags = {
+    Name    = "${var.project_name}-private-rt"
+    Project = var.project_name
+  }
+}
+
+# Associate Public Subnets with Public Route Table
+resource "aws_route_table_association" "public" {
+  count          = length(var.public_subnet_cidrs)
+  subnet_id      = aws_subnet.public[count.index].id
+  route_table_id = aws_route_table.public.id
+}
+
+# Associate Private Subnets with Private Route Table
+resource "aws_route_table_association" "private" {
+  count          = length(var.private_subnet_cidrs)
+  subnet_id      = aws_subnet.private[count.index].id
+  route_table_id = aws_route_table.private.id
 }
 
 # Security Group
 resource "aws_security_group" "ec2_sg" {
   name_prefix = "${var.project_name}-sg"
-  vpc_id      = data.aws_vpc.default.id
+  vpc_id      = aws_vpc.main.id
 
   ingress {
     description = "SSH"
@@ -81,7 +157,7 @@ resource "aws_instance" "ec2_instances" {
   instance_type          = var.instance_type
   key_name               = var.key_name
   vpc_security_group_ids = [aws_security_group.ec2_sg.id]
-  subnet_id              = data.aws_subnets.default.ids[count.index % length(data.aws_subnets.default.ids)]
+  subnet_id              = aws_subnet.public[count.index % length(var.public_subnet_cidrs)].id
 
   # User data for basic setup
   user_data = <<-EOF
@@ -143,12 +219,12 @@ resource "null_resource" "deploy_microservice" {
 
   # Run Ansible playbook to deploy microservice to EKS
   provisioner "local-exec" {
-    command = "cd ../ansible && ansible-playbook playbooks/deploy-microservice.yml -e eks_cluster_name=${module.eks[0].cluster_name} -e aws_region=${var.aws_region}"
+    command = "cd ../ansible && ansible-playbook playbooks/deploy-microservice.yml -e eks_cluster_name=${var.deploy_eks ? aws_eks_cluster.main[0].name : ""} -e aws_region=${var.aws_region}"
     
     environment = {
       ANSIBLE_HOST_KEY_CHECKING = "False"
     }
   }
 
-  depends_on = [module.eks]
+  depends_on = [aws_eks_cluster.main]
 }

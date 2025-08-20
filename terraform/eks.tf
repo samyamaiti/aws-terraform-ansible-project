@@ -78,7 +78,7 @@ resource "aws_eks_cluster" "main" {
   version  = var.eks_version
 
   vpc_config {
-    subnet_ids              = data.aws_subnets.default.ids
+    subnet_ids              = concat([for subnet in aws_subnet.public : subnet.id], [for subnet in aws_subnet.private : subnet.id])
     endpoint_private_access = true
     endpoint_public_access  = true
     public_access_cidrs     = ["0.0.0.0/0"]
@@ -103,7 +103,7 @@ resource "aws_eks_node_group" "main" {
   cluster_name    = aws_eks_cluster.main[0].name
   node_group_name = "${var.project_name}-node-group"
   node_role_arn   = aws_iam_role.eks_node_role[0].arn
-  subnet_ids      = data.aws_subnets.default.ids
+  subnet_ids      = [for subnet in aws_subnet.private : subnet.id]
   instance_types  = [var.eks_node_instance_type]
 
   scaling_config {
@@ -134,7 +134,7 @@ resource "aws_eks_node_group" "main" {
 resource "aws_security_group" "eks_additional" {
   count       = var.deploy_eks ? 1 : 0
   name_prefix = "${var.project_name}-eks-additional"
-  vpc_id      = data.aws_vpc.default.id
+  vpc_id      = aws_vpc.main.id
 
   ingress {
     description = "HTTP for applications"
