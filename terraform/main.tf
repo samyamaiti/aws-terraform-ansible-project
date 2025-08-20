@@ -237,7 +237,12 @@ resource "null_resource" "configure_instances" {
 
   # Run Ansible playbook to install software on EC2 instances
   provisioner "local-exec" {
-    command = "cd ../ansible && ansible-playbook -i inventory/hosts.tpl playbooks/install-software.yml"
+    working_dir = path.module
+    command     = <<-EOT
+      ansible-playbook \
+        -i "${path.module}/../ansible/inventory/hosts.tpl" \
+        "${path.module}/../ansible/playbooks/install-software.yml"
+    EOT
 
     environment = {
       ANSIBLE_HOST_KEY_CHECKING = "False"
@@ -253,15 +258,21 @@ resource "null_resource" "deploy_microservice" {
 
   # Run Ansible playbook to deploy microservice to EKS
   provisioner "local-exec" {
-    working_dir = path.root
-    command     = "ANSIBLE_ROLES_PATH=${path.root}/../ansible/roles ansible-playbook ${path.root}/../ansible/playbooks/deploy-microservice.yml -e eks_cluster_name=${aws_eks_cluster.main[0].name} -e aws_region=${var.aws_region} -e project_root=${path.root}/.."
+    working_dir = path.module
+    command     = <<-EOT
+      export ANSIBLE_ROLES_PATH="${path.module}/../ansible/roles" && \
+      ansible-playbook "${path.module}/../ansible/playbooks/deploy-microservice.yml" \
+        -e "eks_cluster_name=${aws_eks_cluster.main[0].name}" \
+        -e "aws_region=${var.aws_region}" \
+        -e "project_root=${path.module}/.."
+    EOT
 
     environment = {
       ANSIBLE_HOST_KEY_CHECKING = "False"
       AWS_REGION                = var.aws_region
       ANSIBLE_PYTHON_INTERPRETER = "/usr/bin/python3"
       PATH                      = "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
-      KUBECONFIG               = pathexpand("~/.kube/config")
+      KUBECONFIG               = "~/.kube/config"
     }
   }
 
