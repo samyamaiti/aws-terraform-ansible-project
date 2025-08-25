@@ -268,11 +268,11 @@ resource "null_resource" "deploy_microservice" {
     EOT
 
     environment = {
-      ANSIBLE_HOST_KEY_CHECKING = "False"
-      AWS_REGION                = var.aws_region
+      ANSIBLE_HOST_KEY_CHECKING  = "False"
+      AWS_REGION                 = var.aws_region
       ANSIBLE_PYTHON_INTERPRETER = "/usr/bin/python3"
-      PATH                      = "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
-      KUBECONFIG               = "~/.kube/config"
+      PATH                       = "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+      KUBECONFIG                 = "~/.kube/config"
     }
   }
 
