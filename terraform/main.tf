@@ -262,7 +262,7 @@ resource "null_resource" "deploy_microservice" {
     command     = <<-EOT
       export ANSIBLE_ROLES_PATH="${path.module}/../ansible/roles" && \
       ansible-playbook "${path.module}/../ansible/playbooks/deploy-microservice.yml" \
-        -e "eks_cluster_name=${aws_eks_cluster.main[0].name}" \
+        -e "eks_cluster_name=${aws_eks_cluster.main[count.index].name}" \
         -e "aws_region=${var.aws_region}" \
         -e "project_root=${path.module}/.."
     EOT
@@ -277,12 +277,13 @@ resource "null_resource" "deploy_microservice" {
   }
 
   triggers = {
-    cluster_endpoint = aws_eks_cluster.main[0].endpoint
-    cluster_name     = aws_eks_cluster.main[0].name
+    cluster_endpoint = aws_eks_cluster.main[count.index].endpoint
+    cluster_name     = aws_eks_cluster.main[count.index].name
   }
 
   depends_on = [
     aws_eks_cluster.main,
-    aws_eks_node_group.main
+    aws_eks_node_group.main,
+    null_resource.configure_instances
   ]
 }
