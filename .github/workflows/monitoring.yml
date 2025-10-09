@@ -123,7 +123,7 @@ jobs:
           fi
 
       - name: Upload Health Report
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: health-report-${{ github.run_number }}
           path: health-report.md
@@ -209,7 +209,7 @@ jobs:
           fi
 
       - name: Upload Security Report
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: security-report-${{ github.run_number }}
           path: security-report.md
@@ -274,7 +274,7 @@ jobs:
           echo "- **ECR Repositories**: $ECR_COUNT" >> cost-report.md
 
       - name: Upload Cost Report
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: cost-report-${{ github.run_number }}
           path: cost-report.md
