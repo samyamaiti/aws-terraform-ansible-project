@@ -287,7 +287,7 @@ resource "null_resource" "deploy_microservice" {
       ansible-playbook "${path.module}/../ansible/playbooks/deploy-microservice.yml" \
         -e "eks_cluster_name=${aws_eks_cluster.main[count.index].name}" \
         -e "aws_region=${var.aws_region}" \
-        -e "project_root=${path.module}/.." && \
+        -e "project_root=${abspath(path.root)}" && \
       deactivate
     EOT
 

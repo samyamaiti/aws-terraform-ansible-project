@@ -71,16 +71,41 @@
         aws ecr get-login-password --region {{ aws_region }} | docker login --username AWS --password-stdin {{ ecr_repository }}
       delegate_to: localhost
 
+    - name: Debug project root
+      debug:
+        msg: "Project root is: {{ project_root }}"
+      
+    - name: Verify microservice directory exists
+      stat:
+        path: "{{ project_root }}/microservice"
+      register: microservice_dir
+      delegate_to: localhost
+
+    - name: Show directory check result
+      debug:
+        var: microservice_dir
+
+    - name: Fail if microservice directory doesn't exist
+      fail:
+        msg: "Microservice directory not found at {{ project_root }}/microservice"
+      when: not microservice_dir.stat.exists
+
     - name: Build Maven project
       shell: |
-        cd {{ project_root }}/microservice 
+        cd "{{ project_root }}/microservice" && \
         mvn clean package -DskipTests
+      register: maven_result
       delegate_to: localhost
+
+    - name: Show Maven build result
+      debug:
+        var: maven_result
 
     - name: Build Docker image
       shell: |
-        cd {{ project_root }}/microservice 
+        cd "{{ project_root }}/microservice" && \
         docker build -t {{ microservice_name }}:latest .
+      register: docker_result
       delegate_to: localhost
 
     - name: Tag Docker image for ECR
