@@ -1,7 +1,7 @@
 ---
 - name: Deploy microservice to EKS
   hosts: localhost
-  gather_facts: false
+  gather_facts: true
   vars:
     aws_region: "{{ aws_region | default('us-west-2') }}"
     cluster_name: "{{ eks_cluster_name | default('demo-eks-cluster') }}"
@@ -25,17 +25,17 @@
       ignore_errors: true
       delegate_to: localhost
 
-    - name: Install Maven if not present (on macOS)
-      shell: brew install maven
-      when: maven_check.rc != 0 and ansible_os_family == "Darwin"
-      delegate_to: localhost
-
-    - name: Install Maven if not present (on Ubuntu/Debian)
-      apt:
-        name: maven
-        state: present
-      when: maven_check.rc != 0 and ansible_os_family == "Debian"
-      become: true
+    - name: Install Maven using Homebrew
+      shell: |
+        # Check if Homebrew is installed
+        if ! command -v brew &> /dev/null; then
+          echo "Homebrew not found. Installing Homebrew..."
+          /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+        fi
+        
+        # Install Maven
+        brew install maven
+      when: ansible_os_family == "Darwin" and maven_check.rc != 0
       delegate_to: localhost
 
     - name: Configure kubectl for EKS cluster
@@ -72,30 +72,41 @@
       delegate_to: localhost
 
     - name: Build Maven project
-      shell: cd {{ project_root }}/microservice && mvn clean package -DskipTests
+      shell: |
+        cd {{ project_root }}/microservice 
+        mvn clean package -DskipTests
       delegate_to: localhost
 
     - name: Build Docker image
-      docker_image:
-        name: "{{ microservice_name }}"
-        tag: "latest"
-        source: build
-        build:
-          path: "{{ project_root }}/microservice"
-          dockerfile: Dockerfile
-        state: present
+      shell: |
+        cd {{ project_root }}/microservice 
+        docker build -t {{ microservice_name }}:latest .
       delegate_to: localhost
 
     - name: Tag Docker image for ECR
-      docker_image:
-        name: "{{ microservice_name }}:latest"
-        repository: "{{ ecr_repository }}"
-        tag: "latest"
-        source: local
-        state: present
+      shell: |
+        docker tag {{ microservice_name }}:latest {{ ecr_repository }}:latest
       delegate_to: localhost
 
     - name: Push image to ECR
+      shell: |
+        docker push {{ ecr_repository }}:latest
+      delegate_to: localhost
+
+    - name: Apply Kubernetes deployment
+      k8s:
+        state: present
+        definition: "{{ lookup('template', '{{ project_root }}/microservice/k8s/deployment.yaml') | from_yaml }}"
+        validate_certs: no
+        namespace: default
+      delegate_to: localhost
+      vars:
+        image_url: "{{ ecr_repository }}:latest"
+
+    - name: Wait for deployment to be ready
+      shell: |
+        kubectl rollout status deployment/{{ microservice_name }} -n default --timeout=300s
+      delegate_to: localhost
       docker_image:
         name: "{{ ecr_repository }}"
         tag: "latest"
