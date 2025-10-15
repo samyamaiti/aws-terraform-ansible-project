@@ -107,37 +107,24 @@
       shell: |
         kubectl rollout status deployment/{{ microservice_name }} -n default --timeout=300s
       delegate_to: localhost
-      docker_image:
-        name: "{{ ecr_repository }}"
-        tag: "latest"
-        push: yes
-        source: local
-      delegate_to: localhost
+      register: rollout_status
 
-    - name: Update Kubernetes deployment with ECR image
-      replace:
-        path: "{{ playbook_dir }}/../microservice/k8s/deployment.yaml"
-        regexp: 'image: demo-microservice:latest'
-        replace: "image: {{ ecr_repository }}:latest"
-      delegate_to: localhost
+    - name: Display rollout status
+      debug:
+        var: rollout_status.stdout_lines
 
-    - name: Deploy microservice to Kubernetes
-      kubernetes.core.k8s:
-        state: present
-        definition: "{{ lookup('file', playbook_dir + '/../microservice/k8s/deployment.yaml') | from_yaml_all | list }}"
-      delegate_to: localhost
-
-    - name: Wait for deployment to be ready
+    - name: Get deployment status
       kubernetes.core.k8s_info:
         api_version: apps/v1
         kind: Deployment
         name: "{{ microservice_name }}"
-        wait: true
-        wait_condition:
-          type: Available
-          status: "True"
-        wait_timeout: 300
+        namespace: default
+      register: deployment_status
       delegate_to: localhost
+
+    - name: Display deployment status
+      debug:
+        var: deployment_status
 
     - name: Get service information
       kubernetes.core.k8s_info:
