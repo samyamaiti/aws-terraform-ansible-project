@@ -1,7 +1,7 @@
 # EKS Cluster IAM Role
 resource "aws_iam_role" "eks_cluster_role" {
   count = var.deploy_eks ? 1 : 0
-  name = "${var.project_name}-eks-cluster-role"
+  name  = "${var.project_name}-eks-cluster-role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -164,8 +164,8 @@ resource "aws_security_group" "eks_additional" {
   }
 
   tags = {
-    Name    = "${var.project_name}-eks-additional-sg"
-    Project = var.project_name
+    Name                                                    = "${var.project_name}-eks-additional-sg"
+    Project                                                 = var.project_name
     "kubernetes.io/cluster/${var.project_name}-eks-cluster" = "owned"
   }
 }
