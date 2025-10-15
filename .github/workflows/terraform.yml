@@ -117,10 +117,23 @@ jobs:
     - name: Terraform Plan
       id: plan
       if: github.event_name == 'pull_request'
-      run: terraform plan -no-color
+      run: |
+        # Set required variables with default values
+        cat > terraform.tfvars <<EOF
+        project_name = "terraform-ansible-project"
+        aws_region = "us-west-2"
+        deploy_eks = true
+        eks_version = "1.32"
+        eks_node_count = 1
+        eks_node_instance_type = "t3.small"
+        EOF
+        
+        terraform plan -no-color -input=false
       env:
         AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
         AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        AWS_REGION: "us-west-2"
+        TF_VAR_create_key_pair: "true"
       continue-on-error: true
 
     - name: Upload Terraform Plan
@@ -166,11 +179,23 @@ jobs:
     - name: Terraform Apply
       if: github.event_name == 'workflow_dispatch' && inputs.action == 'apply'
       id: apply
-      run: terraform apply -auto-approve
+      run: |
+        # Set required variables with default values
+        cat > terraform.tfvars <<EOF
+        project_name = "terraform-ansible-project"
+        aws_region = "us-west-2"
+        deploy_eks = true
+        eks_version = "1.32"
+        eks_node_count = 1
+        eks_node_instance_type = "t3.small"
+        EOF
+        
+        terraform apply -auto-approve -input=false
       env:
         AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
         AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         AWS_REGION: "us-west-2"
+        TF_VAR_create_key_pair: "true"
       continue-on-error: true
 
     - name: Terraform Destroy on Apply Failure
