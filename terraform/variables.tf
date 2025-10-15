@@ -1,3 +1,9 @@
+variable "project_name" {
+  description = "Project name for tagging"
+  type        = string
+  default     = "terraform-ansible-project"
+}
+
 variable "aws_region" {
   description = "AWS region"
   type        = string
@@ -49,13 +55,7 @@ variable "key_name" {
 variable "create_key_pair" {
   description = "Whether to create a new key pair"
   type        = bool
-  default     = false
-}
-
-variable "project_name" {
-  description = "Project name for tagging"
-  type        = string
-  default     = "terraform-ansible-project"
+  default     = true
 }
 
 variable "allowed_cidr_blocks" {
