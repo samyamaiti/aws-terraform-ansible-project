@@ -141,11 +141,19 @@ resource "aws_security_group" "eks_additional" {
   vpc_id      = aws_vpc.main.id
 
   ingress {
-    description = "HTTP for applications"
+    description = "NodePort Services"
     from_port   = 30000
     to_port     = 32767
     protocol    = "tcp"
     cidr_blocks = ["${chomp(data.http.myip.response_body)}/32"]
+  }
+
+  ingress {
+    description = "Allow worker nodes communication"
+    from_port   = 0
+    to_port     = 65535
+    protocol    = "tcp"
+    self        = true
   }
 
   egress {
@@ -158,5 +166,6 @@ resource "aws_security_group" "eks_additional" {
   tags = {
     Name    = "${var.project_name}-eks-additional-sg"
     Project = var.project_name
+    "kubernetes.io/cluster/${var.project_name}-eks-cluster" = "owned"
   }
 }
