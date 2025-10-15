@@ -19,8 +19,9 @@ data "aws_ami" "amazon_linux" {
   }
 }
 
-# Create Key Pair
+# Create Key Pair if it doesn't exist
 resource "aws_key_pair" "terraform_key" {
+  count      = var.create_key_pair ? 1 : 0
   key_name   = var.key_name
   public_key = file("${path.module}/terraform-key.pub")
 }
@@ -261,7 +262,7 @@ resource "null_resource" "deploy_microservice" {
     working_dir = path.module
     command     = <<-EOT
       export ANSIBLE_ROLES_PATH="${path.module}/../ansible/roles" && \
-      ansible-playbook "${path.module}/../ansible/playbooks/deploy-microservice.yml" \
+      ${path.module}/../.venv/bin/ansible-playbook "${path.module}/../ansible/playbooks/deploy-microservice.yml" \
         -e "eks_cluster_name=${aws_eks_cluster.main[count.index].name}" \
         -e "aws_region=${var.aws_region}" \
         -e "project_root=${path.module}/.."

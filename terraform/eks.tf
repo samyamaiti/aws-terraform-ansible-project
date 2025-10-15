@@ -1,7 +1,7 @@
 # EKS Cluster IAM Role
 resource "aws_iam_role" "eks_cluster_role" {
   count = var.deploy_eks ? 1 : 0
-  name  = "${var.project_name}-eks-cluster-role"
+  name = "${var.project_name}-eks-cluster-role-${formatdate("YYYYMMDD", timestamp())}"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -31,7 +31,7 @@ resource "aws_iam_role_policy_attachment" "eks_cluster_policy" {
 # EKS Node Group IAM Role
 resource "aws_iam_role" "eks_node_role" {
   count = var.deploy_eks ? 1 : 0
-  name  = "${var.project_name}-eks-node-role"
+  name  = "${var.project_name}-eks-node-role-${formatdate("YYYYMMDD", timestamp())}"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -107,7 +107,7 @@ resource "aws_eks_node_group" "main" {
   node_group_name = "${var.project_name}-node-group"
   node_role_arn   = aws_iam_role.eks_node_role[0].arn
   subnet_ids      = [for subnet in aws_subnet.private : subnet.id]
-  instance_types  = [var.eks_node_instance_type]
+  instance_types  = ["t3.micro"]
 
   scaling_config {
     desired_size = var.eks_node_count

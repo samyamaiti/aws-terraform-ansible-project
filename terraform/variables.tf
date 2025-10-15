@@ -46,6 +46,12 @@ variable "key_name" {
   default     = "my-terraform-key"
 }
 
+variable "create_key_pair" {
+  description = "Whether to create a new key pair"
+  type        = bool
+  default     = false
+}
+
 variable "project_name" {
   description = "Project name for tagging"
   type        = string
