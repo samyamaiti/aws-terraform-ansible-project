@@ -262,15 +262,33 @@ resource "null_resource" "configure_instances" {
 resource "null_resource" "deploy_microservice" {
   count = var.deploy_eks ? 1 : 0
 
+  # Setup Python venv and install Ansible
+  provisioner "local-exec" {
+    working_dir = path.module
+    command     = <<-EOT
+      # Create Python virtual environment if it doesn't exist
+      python3 -m venv ../.venv || true
+      
+      # Activate virtual environment and install requirements
+      . ../.venv/bin/activate && \
+      pip install --upgrade pip && \
+      pip install ansible boto3 kubernetes && \
+      deactivate
+    EOT
+  }
+
   # Run Ansible playbook to deploy microservice to EKS
   provisioner "local-exec" {
     working_dir = path.module
     command     = <<-EOT
+      # Activate virtual environment and run playbook
+      . ../.venv/bin/activate && \
       export ANSIBLE_ROLES_PATH="${path.module}/../ansible/roles" && \
-      ${path.module}/../.venv/bin/ansible-playbook "${path.module}/../ansible/playbooks/deploy-microservice.yml" \
+      ansible-playbook "${path.module}/../ansible/playbooks/deploy-microservice.yml" \
         -e "eks_cluster_name=${aws_eks_cluster.main[count.index].name}" \
         -e "aws_region=${var.aws_region}" \
-        -e "project_root=${path.module}/.."
+        -e "project_root=${path.module}/.." && \
+      deactivate
     EOT
 
     environment = {
