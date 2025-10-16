@@ -136,15 +136,20 @@
         docker push {{ ecr_repository }}:latest
       delegate_to: localhost
 
-    - name: Apply Kubernetes deployment
-      k8s:
-        state: present
-        definition: "{{ lookup('template', project_root + '/microservice/k8s/deployment.yaml') | from_yaml }}"
-        validate_certs: no
-        namespace: default
-      delegate_to: localhost
+    - name: Read and process k8s manifests
+      set_fact:
+        k8s_manifests: "{{ lookup('template', project_root + '/microservice/k8s/deployment.yaml') | from_yaml_all | list }}"
       vars:
         image_url: "{{ ecr_repository }}:latest"
+
+    - name: Apply Kubernetes manifests
+      k8s:
+        state: present
+        definition: "{{ item }}"
+        validate_certs: no
+        namespace: default
+      loop: "{{ k8s_manifests }}"
+      delegate_to: localhost
 
     - name: Wait for deployment to be ready
       shell: |
