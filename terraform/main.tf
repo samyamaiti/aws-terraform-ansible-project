@@ -267,10 +267,10 @@ resource "null_resource" "deploy_microservice" {
     working_dir = path.module
     command     = <<-EOT
       # Create Python virtual environment if it doesn't exist
-      python3 -m venv ../.venv || true
+      python3 -m venv "${path.module}/../.venv" || true
       
       # Activate virtual environment and install requirements
-      . ../.venv/bin/activate && \
+      . "${path.module}/../.venv/bin/activate" && \
       pip install --upgrade pip && \
       pip install ansible boto3 kubernetes && \
       deactivate
@@ -282,12 +282,12 @@ resource "null_resource" "deploy_microservice" {
     working_dir = path.module
     command     = <<-EOT
       # Activate virtual environment and run playbook
-      . ../.venv/bin/activate && \
+      . "${path.module}/../.venv/bin/activate" && \
       export ANSIBLE_ROLES_PATH="${path.module}/../ansible/roles" && \
       ansible-playbook "${path.module}/../ansible/playbooks/deploy-microservice.yml" \
         -e "eks_cluster_name=${aws_eks_cluster.main[count.index].name}" \
         -e "aws_region=${var.aws_region}" \
-        -e "project_root=${abspath(path.root)}" && \
+        -e "project_root=${dirname(abspath(path.root))}" && \
       deactivate
     EOT
 

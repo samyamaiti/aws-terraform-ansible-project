@@ -71,10 +71,22 @@
         aws ecr get-login-password --region {{ aws_region }} | docker login --username AWS --password-stdin {{ ecr_repository }}
       delegate_to: localhost
 
-    - name: Debug project root
+    - name: Debug paths
       debug:
-        msg: "Project root is: {{ project_root }}"
+        msg: 
+          - "Project root is: {{ project_root }}"
+          - "Playbook directory is: {{ playbook_dir }}"
+          - "Current working directory is: {{ lookup('pipe', 'pwd') }}"
       
+    - name: List directory contents
+      shell: "ls -la {{ project_root }}"
+      register: dir_contents
+      delegate_to: localhost
+      
+    - name: Show directory contents
+      debug:
+        var: dir_contents.stdout_lines
+
     - name: Verify microservice directory exists
       stat:
         path: "{{ project_root }}/microservice"
@@ -83,11 +95,17 @@
 
     - name: Show directory check result
       debug:
-        var: microservice_dir
+        msg: 
+          - "Microservice directory status:"
+          - "Exists: {{ microservice_dir.stat.exists | default(false) }}"
+          - "Path checked: {{ project_root }}/microservice"
 
     - name: Fail if microservice directory doesn't exist
       fail:
-        msg: "Microservice directory not found at {{ project_root }}/microservice"
+        msg: |
+          Microservice directory not found at {{ project_root }}/microservice
+          Project root: {{ project_root }}
+          Directory contents: {{ dir_contents.stdout }}
       when: not microservice_dir.stat.exists
 
     - name: Build Maven project
@@ -121,7 +139,7 @@
     - name: Apply Kubernetes deployment
       k8s:
         state: present
-        definition: "{{ lookup('template', '{{ project_root }}/microservice/k8s/deployment.yaml') | from_yaml }}"
+        definition: "{{ lookup('template', project_root + '/microservice/k8s/deployment.yaml') | from_yaml }}"
         validate_certs: no
         namespace: default
       delegate_to: localhost
