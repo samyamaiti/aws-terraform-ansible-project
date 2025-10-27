@@ -1,17 +1,19 @@
 locals {
-  eks_cluster_name = try(aws_eks_cluster.main[0].name, "")
-  eks_cluster_endpoint = try(aws_eks_cluster.main[0].endpoint, "")
-  eks_deployed = try(var.deploy_eks && local.eks_cluster_name != "", false)
+  config = {
+    cluster_name     = var.deploy_eks ? try(aws_eks_cluster.main[0].name, "") : ""
+    cluster_endpoint = var.deploy_eks ? try(aws_eks_cluster.main[0].endpoint, "") : ""
+  }
+  eks_deployed = var.deploy_eks && local.config.cluster_name != ""
 }
 
 output "eks_cluster_name" {
   description = "Name of the EKS cluster"
-  value       = local.eks_deployed ? local.eks_cluster_name : "Not deployed"
+  value       = local.eks_deployed ? local.config.cluster_name : "Not deployed"
 }
 
 output "eks_cluster_endpoint" {
   description = "Endpoint for the EKS cluster"
-  value       = local.eks_deployed ? local.eks_cluster_endpoint : "Not deployed"
+  value       = local.eks_deployed ? local.config.cluster_endpoint : "Not deployed"
 }
 
 output "eks_cluster_version" {
@@ -21,5 +23,5 @@ output "eks_cluster_version" {
 
 output "kubeconfig_update_command" {
   description = "Command to update kubeconfig for the EKS cluster"
-  value       = local.eks_deployed ? "aws eks update-kubeconfig --region ${var.aws_region} --name ${local.eks_cluster_name}" : "EKS cluster not deployed"
+  value       = local.eks_deployed ? "aws eks update-kubeconfig --region ${var.aws_region} --name ${local.config.cluster_name}" : "EKS cluster not deployed"
 }
