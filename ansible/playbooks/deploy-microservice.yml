@@ -4,10 +4,11 @@
   gather_facts: true
   vars:
     aws_region: "{{ aws_region | default('us-west-2') }}"
-    cluster_name: "{{ eks_cluster_name | default('demo-eks-cluster') }}"
+    cluster_name: "{{ eks_cluster_name | default(project_name + '-eks-cluster') }}"
     microservice_name: "demo-microservice"
     microservice_image: "demo-microservice:latest"
     ecr_repository: ""
+    project_name: "{{ project_name | default('demo') }}"
     
   tasks:
     - name: Install required Python packages
@@ -38,11 +39,31 @@
       when: ansible_os_family == "Darwin" and maven_check.rc != 0
       delegate_to: localhost
 
+    - name: Verify EKS cluster exists
+      shell: |
+        aws eks describe-cluster --region {{ aws_region }} --name {{ cluster_name }}
+      register: cluster_check
+      ignore_errors: true
+      delegate_to: localhost
+
+    - name: Fail if EKS cluster doesn't exist
+      fail:
+        msg: "EKS cluster '{{ cluster_name }}' not found in region '{{ aws_region }}'"
+      when: cluster_check.rc != 0
+
     - name: Configure kubectl for EKS cluster
       shell: |
         aws eks update-kubeconfig --region {{ aws_region }} --name {{ cluster_name }}
+      register: kubeconfig_result
+      failed_when: kubeconfig_result.rc != 0
       delegate_to: localhost
-      when: cluster_name is defined
+
+    - name: Verify kubectl configuration
+      shell: |
+        kubectl cluster-info
+      register: cluster_info
+      failed_when: cluster_info.rc != 0
+      delegate_to: localhost
 
     - name: Check if ECR repository exists
       shell: |
@@ -141,6 +162,13 @@
         k8s_manifests: "{{ lookup('template', project_root + '/microservice/k8s/deployment.yaml') | from_yaml_all | list }}"
       vars:
         image_url: "{{ ecr_repository }}:latest"
+
+    - name: Configure kubectl for EKS cluster
+      shell: |
+        aws eks update-kubeconfig --region {{ aws_region }} --name {{ eks_cluster_name }}
+      delegate_to: localhost
+      register: kubeconfig_update
+      changed_when: kubeconfig_update.rc == 0
 
     - name: Apply Kubernetes manifests
       k8s:
