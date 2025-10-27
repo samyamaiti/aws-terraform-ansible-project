@@ -24,6 +24,7 @@ output "ssh_connection_commands" {
     for i, instance in aws_instance.ec2_instances :
     "ssh -i ~/.ssh/${var.key_name}.pem ec2-user@${instance.public_ip}"
   ], [])
+}
 
 output "ansible_inventory_file" {
   description = "Path to generated Ansible inventory file"
@@ -33,6 +34,7 @@ output "ansible_inventory_file" {
 output "ansible_execution_enabled" {
   description = "Whether Ansible execution was enabled"
   value       = var.run_ansible
+}
 
 output "deployment_summary" {
   description = "Summary of the deployment"
@@ -46,5 +48,4 @@ output "deployment_summary" {
     timestamp         = timestamp()
   }
 }
-
 
