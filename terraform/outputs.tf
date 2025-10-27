@@ -1,40 +1,38 @@
 output "instance_public_ips" {
   description = "Public IP addresses of the EC2 instances"
-  value       = aws_instance.ec2_instances[*].public_ip
+  value       = try(aws_instance.ec2_instances[*].public_ip, [])
 }
 
 output "instance_private_ips" {
   description = "Private IP addresses of the EC2 instances"
-  value       = aws_instance.ec2_instances[*].private_ip
+  value       = try(aws_instance.ec2_instances[*].private_ip, [])
 }
 
 output "instance_ids" {
   description = "IDs of the EC2 instances"
-  value       = aws_instance.ec2_instances[*].id
+  value       = try(aws_instance.ec2_instances[*].id, [])
 }
 
 output "security_group_id" {
   description = "ID of the security group"
-  value       = aws_security_group.ec2_sg.id
+  value       = try(aws_security_group.ec2_sg.id, "")
 }
 
 output "ssh_connection_commands" {
   description = "SSH commands to connect to instances"
-  value = [
+  value = try([
     for i, instance in aws_instance.ec2_instances :
     "ssh -i ~/.ssh/${var.key_name}.pem ec2-user@${instance.public_ip}"
-  ]
-}
+  ], [])
 
 output "ansible_inventory_file" {
   description = "Path to generated Ansible inventory file"
-  value       = "${path.module}/../ansible/inventory/hosts"
+  value       = var.run_ansible ? "${path.module}/../ansible/inventory/hosts" : ""
 }
 
 output "ansible_execution_enabled" {
   description = "Whether Ansible execution was enabled"
   value       = var.run_ansible
-}
 
 output "deployment_summary" {
   description = "Summary of the deployment"
